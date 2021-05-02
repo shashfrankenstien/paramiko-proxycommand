@@ -392,6 +392,12 @@ class Transport(threading.Thread, ClosingContextManager):
                 sock = (hl[0], 22)
             else:
                 sock = (hl[0], int(hl[1]))
+
+        if type(sock) is tuple:
+            proxy = paramiko.ProxyCommand.from_ssh_config(sock[0])
+            if proxy is not None:
+                sock = proxy
+
         if type(sock) is tuple:
             # connect to the given (host, port)
             hostname, port = sock

@@ -45,6 +45,7 @@ from paramiko.ssh_exception import (
 from paramiko.transport import Transport
 from paramiko.util import retry_on_signal, ClosingContextManager
 
+from paramiko.proxy import ProxyCommand
 
 class SSHClient(ClosingContextManager):
     """
@@ -335,37 +336,41 @@ class SSHClient(ClosingContextManager):
             Added the ``disabled_algorithms`` argument.
         """
         if not sock:
-            errors = {}
-            # Try multiple possible address families (e.g. IPv4 vs IPv6)
-            to_try = list(self._families_and_addresses(hostname, port))
-            for af, addr in to_try:
-                try:
-                    sock = socket.socket(af, socket.SOCK_STREAM)
-                    if timeout is not None:
-                        try:
-                            sock.settimeout(timeout)
-                        except:
-                            pass
-                    retry_on_signal(lambda: sock.connect(addr))
-                    # Break out of the loop on success
-                    break
-                except socket.error as e:
-                    # Raise anything that isn't a straight up connection error
-                    # (such as a resolution error)
-                    if e.errno not in (ECONNREFUSED, EHOSTUNREACH):
-                        raise
-                    # Capture anything else so we know how the run looks once
-                    # iteration is complete. Retain info about which attempt
-                    # this was.
-                    errors[addr] = e
+            proxy = ProxyCommand.from_ssh_config(hostname)
+            if proxy is not None:
+                sock = proxy
+            else:
+                errors = {}
+                # Try multiple possible address families (e.g. IPv4 vs IPv6)
+                to_try = list(self._families_and_addresses(hostname, port))
+                for af, addr in to_try:
+                    try:
+                        sock = socket.socket(af, socket.SOCK_STREAM)
+                        if timeout is not None:
+                            try:
+                                sock.settimeout(timeout)
+                            except:
+                                pass
+                        retry_on_signal(lambda: sock.connect(addr))
+                        # Break out of the loop on success
+                        break
+                    except socket.error as e:
+                        # Raise anything that isn't a straight up connection error
+                        # (such as a resolution error)
+                        if e.errno not in (ECONNREFUSED, EHOSTUNREACH):
+                            raise
+                        # Capture anything else so we know how the run looks once
+                        # iteration is complete. Retain info about which attempt
+                        # this was.
+                        errors[addr] = e
 
-            # Make sure we explode usefully if no address family attempts
-            # succeeded. We've no way of knowing which error is the "right"
-            # one, so we construct a hybrid exception containing all the real
-            # ones, of a subclass that client code should still be watching for
-            # (socket.error)
-            if len(errors) == len(to_try):
-                raise NoValidConnectionsError(errors)
+                # Make sure we explode usefully if no address family attempts
+                # succeeded. We've no way of knowing which error is the "right"
+                # one, so we construct a hybrid exception containing all the real
+                # ones, of a subclass that client code should still be watching for
+                # (socket.error)
+                if len(errors) == len(to_try):
+                    raise NoValidConnectionsError(errors)
 
         t = self._transport = Transport(
             sock,

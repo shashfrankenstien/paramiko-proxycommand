@@ -17,7 +17,7 @@
 # 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.
 
 
-import os
+import os, sys
 import shlex
 import signal
 from select import select
@@ -34,6 +34,7 @@ except ImportError as e:
 
 from paramiko.ssh_exception import ProxyCommandFailure
 from paramiko.util import ClosingContextManager
+from paramiko.config import SSHConfig
 
 
 class ProxyCommand(ClosingContextManager):
@@ -48,6 +49,19 @@ class ProxyCommand(ClosingContextManager):
     Instances of this class may be used as context managers.
     """
 
+    @classmethod
+    def from_ssh_config(cls, host, config_file=os.path.expanduser("~/.ssh/config")):
+        if os.path.isfile(config_file):
+            ssh_config = SSHConfig()
+            with open(config_file) as f:
+                ssh_config.parse(f)
+
+            user_config = ssh_config.lookup(host)
+            if 'proxycommand' in user_config:
+                return cls(user_config['proxycommand'])
+        return None
+
+
     def __init__(self, command_line):
         """
         Create a new CommandProxy instance. The instance created by this
@@ -58,7 +72,7 @@ class ProxyCommand(ClosingContextManager):
         """
         if subprocess is None:
             raise subprocess_import_error
-        self.cmd = shlex.split(command_line)
+        self.cmd = command_line # shlex.split(command_line)
         self.process = subprocess.Popen(
             self.cmd,
             stdin=subprocess.PIPE,
@@ -88,12 +102,17 @@ class ProxyCommand(ClosingContextManager):
     def recv(self, size):
         """
         Read from the standard output of the forked program.
+        On Windows select() only works on sockets, so the loop will fail on this
+        platform. Therefore, use a simple blocking call in this case.
 
         :param int size: how many chars should be read
 
         :return: the string of bytes read, which may be shorter than requested
         """
         try:
+            if sys.platform == 'win32':
+                return os.read(self.process.stdout.fileno(), size)
+
             buffer = b""
             start = time.time()
             while len(buffer) < size:
@@ -119,7 +138,10 @@ class ProxyCommand(ClosingContextManager):
             raise ProxyCommandFailure(" ".join(self.cmd), e.strerror)
 
     def close(self):
-        os.kill(self.process.pid, signal.SIGTERM)
+        if sys.platform == 'win32':
+            self.process.kill()
+        else:
+            os.kill(self.process.pid, signal.SIGTERM)
 
     @property
     def closed(self):

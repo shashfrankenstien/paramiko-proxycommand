@@ -2,6 +2,25 @@
 Paramiko
 ========
 
+Note
+----
+
+This version has been modified to use ProxyCommand option specified in :code:`~/.ssh/config`
+file. This change also impacts :code:`pysftp` downstream
+
+Example :code:`~/.ssh/config` entry (windows)::
+
+    host *
+        ProxyCommand C:\Program Files (x86)\Nmap\ncat.exe --proxy <proxy_host>:<proxy_port> %h %p
+
+To install this version::
+
+    pip install -U git+https://github.com/shashfrankenstien/paramiko-proxycommand.git
+
+
+----
+
+
 .. Continuous integration and code coverage badges
 
 .. image:: https://travis-ci.org/paramiko/paramiko.svg?branch=master
